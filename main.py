@@ -11,10 +11,9 @@ ARCHIVOS_POR_ANIO = {
     2026: r"c:\Users\MBORJA\OneDrive - ARZOBISPADO DE LIMA\IA\Equipos\7_viajes\CUADRO GENERAL DE VENTAS 2026 (P.O.).xlsx",
 }
 
-# Nombre que usa app.py
 SALIDA_CSV = Path("ventas_viajes.csv")
 
-# Encabezados esperados en el Excel (segun la imagen)
+# Nombres canónicos tal como aparecen en el Excel
 COLUMNAS_EXCEL_CANONICAS = [
     "N°",
     "N. DE PEDIDO",
@@ -31,19 +30,22 @@ COLUMNAS_EXCEL_CANONICAS = [
     "SUPERIOR - RESPONSABLE DE LA CONGREGACION QUE GARANTIZA EL PAGO AL ARZOBISPADO.",
 ]
 
-# Columnas esperadas en app.py
+# Contrato de columnas del CSV de salida (consumido por app.py)
 COLUMNAS_APP = [
-    "Fecha de pedido",
-    "Fecha de ida",
-    "Fecha de retorno",
-    "Fecha de pago",
-    "Fee institucional",
-    "Comisión proveedor",
-    "Aerolíneas",
-    "Rutas",
-    "Responsable",
-    "Precio total pagado",
-    "Estado de Pago",
+    "correlativo_anual",
+    "nro_pedido",
+    "fecha_pedido",
+    "apellidos_nombres",
+    "linea_aerea",
+    "ruta",
+    "pago_del_pasajero",
+    "pago_al_proveedor",
+    "fecha_elaboracion_recibo_pasajero",
+    "fecha_pago_al_proveedor",
+    "fee",
+    "comision_proveedor",
+    "superior_responsable",
+    "estado_pago",
 ]
 
 # Alias para reconocer encabezados del Excel aunque tengan variantes/errores
@@ -71,16 +73,21 @@ ALIAS_EXCEL = {
     ],
 }
 
-# Mapeo final hacia nombres requeridos por app.py
+# Mapeo: nombre canónico del Excel → nombre snake_case del CSV
 MAPEO_EXCEL_A_APP = {
-    "FECHA DE PEDIDO": "Fecha de pedido",
-    "LÍNEA AÉREA": "Aerolíneas",
-    "RUTA": "Rutas",
-    "PAGO DEL PASAJERO": "Precio total pagado",
-    "FECHA DE PAGO AL PROVEEDOR": "Fecha de pago",
-    "FEE ARZOBISPADO": "Fee institucional",
-    "COMISIÓN PROVEEDOR": "Comisión proveedor",
-    "SUPERIOR - RESPONSABLE DE LA CONGREGACION QUE GARANTIZA EL PAGO AL ARZOBISPADO.": "Responsable",
+    "N°": "correlativo_anual",
+    "N. DE PEDIDO": "nro_pedido",
+    "FECHA DE PEDIDO": "fecha_pedido",
+    "APELLIDOS Y NOMBRE": "apellidos_nombres",
+    "LÍNEA AÉREA": "linea_aerea",
+    "RUTA": "ruta",
+    "PAGO DEL PASAJERO": "pago_del_pasajero",
+    "PAGO AL PROVEEDOR": "pago_al_proveedor",
+    "FECHA DE ELABORACION DE RECIBO DEL PAGO DEL PASAJERO": "fecha_elaboracion_recibo_pasajero",
+    "FECHA DE PAGO AL PROVEEDOR": "fecha_pago_al_proveedor",
+    "FEE ARZOBISPADO": "fee",
+    "COMISIÓN PROVEEDOR": "comision_proveedor",
+    "SUPERIOR - RESPONSABLE DE LA CONGREGACION QUE GARANTIZA EL PAGO AL ARZOBISPADO.": "superior_responsable",
 }
 
 
@@ -128,31 +135,25 @@ def asociar_columnas_excel(df: pd.DataFrame) -> pd.DataFrame:
     df = df.rename(columns=renombres)
     df = df.loc[:, ~df.columns.duplicated(keep="first")]
 
-    # Mantiene solo columnas asociadas al cuadro.
     presentes = [c for c in COLUMNAS_EXCEL_CANONICAS if c in df.columns]
     return df[presentes].copy()
 
 
 def convertir_columnas_app(df: pd.DataFrame) -> pd.DataFrame:
-    """Convierte columnas canónicas de Excel a nombres requeridos por app.py."""
+    """Convierte columnas canónicas de Excel a nombres snake_case del CSV."""
     df = df.rename(columns=MAPEO_EXCEL_A_APP)
 
-    if "Aerolíneas" in df.columns:
-        df["Aerolíneas"] = df["Aerolíneas"].str.strip()
+    if "linea_aerea" in df.columns:
+        df["linea_aerea"] = df["linea_aerea"].str.strip()
 
-    if "Fecha de ida" not in df.columns:
-        df["Fecha de ida"] = pd.NA
-    if "Fecha de retorno" not in df.columns:
-        df["Fecha de retorno"] = pd.NA
-
-    if "Estado de Pago" not in df.columns:
-        if "Fecha de pago" in df.columns:
-            fecha_pago = pd.to_datetime(df["Fecha de pago"], errors="coerce")
-            df["Estado de Pago"] = fecha_pago.apply(lambda x: "Pendiente" if pd.isna(x) else "Pagado")
+    if "estado_pago" not in df.columns:
+        if "fecha_pago_al_proveedor" in df.columns:
+            fecha_pago = pd.to_datetime(df["fecha_pago_al_proveedor"], errors="coerce")
+            df["estado_pago"] = fecha_pago.apply(lambda x: "Pendiente" if pd.isna(x) else "Pagado")
         else:
-            df["Estado de Pago"] = "Pendiente"
+            df["estado_pago"] = "Pendiente"
 
-    for col_numerica in ["Fee institucional", "Comisión proveedor", "Precio total pagado"]:
+    for col_numerica in ["fee", "comision_proveedor", "pago_del_pasajero", "pago_al_proveedor"]:
         if col_numerica in df.columns:
             df[col_numerica] = pd.to_numeric(df[col_numerica], errors="coerce")
 
@@ -176,7 +177,7 @@ def leer_excel_con_anio(ruta_original: str, anio: int) -> pd.DataFrame:
 
     df = asociar_columnas_excel(df)
     df = convertir_columnas_app(df)
-    df["Año"] = anio
+    df["anio"] = anio
     return df
 
 
@@ -198,7 +199,7 @@ def main() -> None:
     df_final = pd.concat(dataframes, ignore_index=True)
     df_final = completar_columnas_faltantes(df_final)
 
-    orden_final = [*COLUMNAS_APP, "Año"]
+    orden_final = [*COLUMNAS_APP, "anio"]
     columnas_restantes = [c for c in df_final.columns if c not in orden_final]
     df_final = df_final[orden_final + columnas_restantes]
 
